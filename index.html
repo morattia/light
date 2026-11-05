@@ -13,20 +13,20 @@
 * { box-sizing: border-box; }
 
 body {
-  font-family: Arial, sans-serif;
-  background: #edf2f7;
   margin: 0;
   padding: 18px;
-  color: #18324b;
+  background: #edf2f7;
+  font-family: Arial, sans-serif;
+  color: #17324d;
 }
 
 .panel {
-  background: white;
-  padding: 22px;
-  border-radius: 18px;
   max-width: 460px;
-  margin: auto;
-  box-shadow: 0 4px 18px #0001;
+  margin: 20px auto;
+  padding: 23px;
+  border-radius: 20px;
+  background: white;
+  box-shadow: 0 5px 22px #0002;
 }
 
 h1 {
@@ -35,22 +35,23 @@ h1 {
 }
 
 .subtitulo {
-  text-align: center;
   color: #64748b;
+  text-align: center;
   font-size: 14px;
 }
 
 label {
   display: block;
+  margin-top: 18px;
+  margin-bottom: 7px;
   font-weight: bold;
-  margin: 18px 0 7px;
 }
 
 input, select, button {
   width: 100%;
   padding: 14px;
-  border-radius: 10px;
   font-size: 16px;
+  border-radius: 10px;
   margin-bottom: 10px;
 }
 
@@ -71,7 +72,7 @@ button:disabled {
   opacity: .5;
 }
 
-.detener {
+.secundario {
   background: #64748b;
 }
 
@@ -82,20 +83,35 @@ button:disabled {
 
 #resultado {
   padding: 18px;
-  margin-top: 18px;
   border-radius: 12px;
   background: #e2e8f0;
+  margin-top: 18px;
   text-align: center;
   font-weight: bold;
+  white-space: pre-line;
   overflow-wrap: anywhere;
 }
 
-.nota {
-  font-size: 12px;
-  text-align: center;
-  color: #64748b;
+.exito {
+  background: #d1fae5 !important;
+  color: #065f46;
 }
 
+.error {
+  background: #fee2e2 !important;
+  color: #991b1b;
+}
+
+.aviso {
+  background: #fef3c7 !important;
+  color: #92400e;
+}
+
+.nota {
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
+}
 </style>
 </head>
 
@@ -110,14 +126,15 @@ Asistencia y entrega de refrigerios
 </p>
 
 <label for="clave">Clave del encargado</label>
+
 <input
   type="password"
   id="clave"
-  placeholder="Ingresa tu clave privada"
+  placeholder="Ingresa tu clave"
   autocomplete="off"
 >
 
-<label for="operacion">Tipo de registro</label>
+<label for="operacion">Selecciona el registro</label>
 
 <select id="operacion">
   <option value="asistencia">Asistencia</option>
@@ -126,10 +143,10 @@ Asistencia y entrega de refrigerios
 </select>
 
 <button id="iniciar" onclick="iniciarScanner()">
-INICIAR CÁMARA
+INICIAR ESCÁNER
 </button>
 
-<button class="detener" onclick="detenerScanner()">
+<button class="secundario" onclick="detenerScanner()">
 DETENER CÁMARA
 </button>
 
@@ -140,44 +157,51 @@ Esperando para iniciar...
 </div>
 
 <p class="nota">
-Cada persona puede registrar una sola vez cada operación.
+Cada participante puede registrar una vez cada operación.
 </p>
 
 </div>
 
 <script>
 
-const API = 'https://script.google.com/macros/s/AKfycbxqops83P4WUBQuWWO2QGwowVq4-pWrxuFfvwetamcr4s0S6Gbp7go9a_LQDVoY_6gEYQ/exec';
+// =====================================
+// CONEXIÓN GOOGLE APPS SCRIPT
+// =====================================
+
+const API =
+'https://script.google.com/macros/s/AKfycbxqops83P4WUBQuWWO2QGwowVq4-pWrxuFfvwetamcr4s0S6Gbp7go9a_LQDVoY_6gEYQ/exec';
 
 let scanner = null;
 let ocupado = false;
 let ultimoCodigo = '';
-let tiempoUltimo = 0;
-let solicitudActual = null;
+let ultimoTiempo = 0;
+let timeoutSolicitud = null;
 
-function mostrar(texto, tipo = 'normal') {
+
+// =====================================
+// MOSTRAR MENSAJES
+// =====================================
+
+function mostrar(texto, tipo = '') {
 
   const caja = document.getElementById('resultado');
 
+  caja.className = tipo;
   caja.textContent = texto;
 
-  const colores = {
-    normal: ['#e2e8f0', '#18324b'],
-    exito: ['#d1fae5', '#065f46'],
-    error: ['#fee2e2', '#991b1b'],
-    aviso: ['#fef3c7', '#92400e']
-  };
-
-  caja.style.background = colores[tipo][0];
-  caja.style.color = colores[tipo][1];
 }
 
+
+// =====================================
+// INICIAR CÁMARA
+// =====================================
 
 async function iniciarScanner() {
 
   if (scanner) return;
 
-  const clave = document.getElementById('clave').value.trim();
+  const clave = document.getElementById('clave')
+    .value.trim();
 
   if (!clave) {
     mostrar('Ingresa la clave del encargado.', 'error');
@@ -188,13 +212,17 @@ async function iniciarScanner() {
       !navigator.mediaDevices ||
       !navigator.mediaDevices.getUserMedia) {
 
-    mostrar('El navegador no permite acceder a la cámara. Abre la página HTTPS en Chrome o Safari.', 'error');
+    mostrar(
+      'Necesitas abrir esta página mediante HTTPS y permitir el acceso a la cámara.',
+      'error'
+    );
+
     return;
   }
 
   try {
 
-    mostrar('Preparando cámara...');
+    mostrar('Solicitando acceso a la cámara...');
 
     scanner = new Html5Qrcode('lector');
 
@@ -210,14 +238,17 @@ async function iniciarScanner() {
 
     document.getElementById('iniciar').disabled = true;
 
-    mostrar('¡CÁMARA ACTIVA! Escanea un participante.', 'exito');
+    mostrar(
+      'CÁMARA ACTIVA\nEscanea un código QR.',
+      'exito'
+    );
 
   } catch(error) {
 
     scanner = null;
 
     mostrar(
-      'No se pudo abrir la cámara: ' +
+      'ERROR DE CÁMARA: ' +
       (error.message || String(error)),
       'error'
     );
@@ -229,24 +260,37 @@ async function iniciarScanner() {
 }
 
 
-function procesarQR(codigo) {
+// =====================================
+// ENVIAR CÓDIGO A GOOGLE SHEETS
+// =====================================
 
-  const ahora = Date.now();
+function procesarQR(codigo) {
 
   if (ocupado) return;
 
-  if (codigo === ultimoCodigo && ahora - tiempoUltimo < 2500) {
+  const ahora = Date.now();
+
+  if (
+    codigo === ultimoCodigo &&
+    ahora - ultimoTiempo < 3000
+  ) {
     return;
   }
 
   ocupado = true;
+
   ultimoCodigo = codigo;
-  tiempoUltimo = ahora;
+  ultimoTiempo = ahora;
 
-  const clave = document.getElementById('clave').value.trim();
-  const operacion = document.getElementById('operacion').value;
+  const clave = document.getElementById('clave')
+    .value.trim();
 
-  mostrar('Registrando código ' + codigo + '...');
+  const operacion = document.getElementById('operacion')
+    .value;
+
+  mostrar(
+    'Consultando participante...\nCódigo: ' + codigo
+  );
 
   const parametros = new URLSearchParams({
     action: 'scan',
@@ -258,15 +302,33 @@ function procesarQR(codigo) {
 
   const script = document.createElement('script');
 
-  solicitudActual = script;
+  let terminado = false;
+
+  function finalizar() {
+
+    if (terminado) return;
+
+    terminado = true;
+
+    clearTimeout(timeoutSolicitud);
+
+    if (script.parentNode) {
+      script.parentNode.removeChild(script);
+    }
+
+    delete window.qrCallback;
+
+    ocupado = false;
+
+  }
 
   window.qrCallback = function(respuesta) {
 
     if (respuesta.ok) {
 
       mostrar(
-        '✓ ' + respuesta.mensaje +
-        '\n' + respuesta.nombre +
+        '✓ REGISTRO EXITOSO\n\n' +
+        respuesta.nombre +
         '\nCódigo: ' + respuesta.codigo +
         '\nHora: ' + respuesta.hora,
         'exito'
@@ -276,24 +338,30 @@ function procesarQR(codigo) {
 
       mostrar(
         '⚠ ' + respuesta.mensaje +
-        (respuesta.nombre ? '\n' + respuesta.nombre : ''),
+        (respuesta.nombre
+          ? '\nParticipante: ' + respuesta.nombre
+          : ''),
         'error'
       );
 
     }
 
-    finalizarSolicitud(script);
+    finalizar();
 
   };
 
   script.onerror = function() {
 
     mostrar(
-      'No pudimos conectar con Google Sheets. Revisa internet y la implementación.',
+      'ERROR DE CONEXIÓN\n\n' +
+      'No se recibió respuesta de Google Apps Script.\n' +
+      'Comprueba la implementación y la conexión a internet.',
       'error'
     );
 
-    finalizarSolicitud(script);
+    console.error('URL solicitada:', script.src);
+
+    finalizar();
 
   };
 
@@ -301,33 +369,41 @@ function procesarQR(codigo) {
 
   document.body.appendChild(script);
 
+  timeoutSolicitud = setTimeout(() => {
+
+    if (!terminado) {
+
+      mostrar(
+        'TIEMPO AGOTADO\n\nGoogle no respondió a tiempo. Comprueba internet y vuelve a intentar.',
+        'error'
+      );
+
+      finalizar();
+
+    }
+
+  }, 20000);
+
 }
 
 
-function finalizarSolicitud(script) {
-
-  if (script && script.parentNode) {
-    script.parentNode.removeChild(script);
-  }
-
-  solicitudActual = null;
-
-  setTimeout(() => {
-    ocupado = false;
-  }, 1800);
-
-}
-
+// =====================================
+// DETENER CÁMARA
+// =====================================
 
 async function detenerScanner() {
 
   if (scanner) {
 
     try {
+
       await scanner.stop();
       await scanner.clear();
+
     } catch(error) {
+
       console.error(error);
+
     }
 
     scanner = null;
