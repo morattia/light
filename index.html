@@ -290,114 +290,129 @@ function procesarQR(codigo) {
 // ENVIAR REGISTRO A GOOGLE
 // =====================================
 
+
 function enviarRegistro(codigo, operacion, clave) {
 
-  const callbackNombre =
-    'qrCallback_' + Date.now() + '_' +
-    Math.floor(Math.random() * 100000);
+  let intento = 0;
+  const maxIntentos = 3;
+  let finalizado = false;
 
-  const script = document.createElement('script');
+  function intentar() {
 
-  let terminado = false;
-  let temporizador = null;
+    if (finalizado) return;
 
-  function finalizar() {
+    intento++;
 
-    if (terminado) return;
+    const callbackNombre =
+      'qrCallback_' + Date.now() + '_' +
+      Math.floor(Math.random() * 1000000);
 
-    terminado = true;
+    const script = document.createElement('script');
 
-    if (temporizador) {
+    let terminado = false;
+    let temporizador;
+
+    function limpiar() {
+      if (terminado) return;
+      terminado = true;
+
       clearTimeout(temporizador);
+
+      script.remove();
+
+      delete window[callbackNombre];
     }
 
-    if (script.parentNode) {
-      script.parentNode.removeChild(script);
+    function reintentar(motivo) {
+      limpiar();
+
+      if (intento < maxIntentos) {
+
+        mostrar(
+          'Reintentando conexión con Google...\n' +
+          'Intento ' + (intento + 1) + ' de ' + maxIntentos,
+          'aviso'
+        );
+
+        setTimeout(intentar, 1500);
+
+      } else {
+
+        finalizado = true;
+        ocupado = false;
+
+        mostrar(
+          'NO SE PUDO RECIBIR RESPUESTA\n\n' +
+          'Se realizaron ' + intento + ' intentos.\n' +
+          'Revisa la hoja antes de volver a escanear.',
+          'error'
+        );
+
+        console.error(motivo);
+      }
     }
 
-    delete window[callbackNombre];
+    window[callbackNombre] = function(respuesta) {
 
-    ocupado = false;
+      if (terminado || finalizado) return;
+
+      limpiar();
+      finalizado = true;
+      ocupado = false;
+
+      if (!respuesta || typeof respuesta.ok !== 'boolean') {
+        mostrar('Respuesta inválida de Google.', 'error');
+        return;
+      }
+
+      if (respuesta.ok) {
+
+        mostrar(
+          '✓ REGISTRO EXITOSO\n\n' +
+          respuesta.nombre +
+          '\nCódigo: ' + respuesta.codigo +
+          '\nOperación: ' + respuesta.operacion +
+          '\nHora: ' + respuesta.hora,
+          'exito'
+        );
+
+      } else {
+
+        mostrar(
+          '⚠ ' + respuesta.mensaje +
+          (respuesta.nombre
+            ? '\nParticipante: ' + respuesta.nombre
+            : ''),
+          'error'
+        );
+      }
+    };
+
+    script.onerror = function() {
+      reintentar('Error cargando respuesta de Google');
+    };
+
+    const parametros = new URLSearchParams({
+      action: 'scan',
+      code: codigo,
+      operation: operacion,
+      key: clave,
+      callback: callbackNombre,
+      intento: String(intento)
+    });
+
+    script.src =
+      API + '?' + parametros.toString() +
+      '&nocache=' + Date.now();
+
+    temporizador = setTimeout(function() {
+      reintentar('Tiempo agotado');
+    }, 15000);
+
+    document.body.appendChild(script);
   }
 
-  window[callbackNombre] = function(respuesta) {
-
-    if (!respuesta || typeof respuesta.ok !== 'boolean') {
-
-      mostrar(
-        'Google respondió con un formato inesperado.',
-        'error'
-      );
-
-      finalizar();
-      return;
-    }
-
-    if (respuesta.ok) {
-
-      mostrar(
-        '✓ REGISTRO EXITOSO\n\n' +
-        respuesta.nombre +
-        '\nCódigo: ' + respuesta.codigo +
-        '\nOperación: ' + respuesta.operacion +
-        '\nHora: ' + respuesta.hora,
-        'exito'
-      );
-
-    } else {
-
-      mostrar(
-        '⚠ ' + respuesta.mensaje +
-        (respuesta.nombre
-          ? '\nParticipante: ' + respuesta.nombre
-          : ''),
-        'error'
-      );
-    }
-
-    finalizar();
-  };
-
-  script.onerror = function() {
-
-    mostrar(
-      'ERROR DE CONEXIÓN\n\n' +
-      'No se pudo recibir la respuesta de Google Apps Script.\n' +
-      'Comprueba internet y la implementación.',
-      'error'
-    );
-
-    console.error('Error cargando:', script.src);
-
-    finalizar();
-  };
-
-  const parametros = new URLSearchParams({
-    action: 'scan',
-    code: codigo,
-    operation: operacion,
-    key: clave,
-    callback: callbackNombre
-  });
-
-  script.src = API + '?' + parametros.toString();
-
-  temporizador = setTimeout(function() {
-
-    if (!terminado) {
-
-      mostrar(
-        'TIEMPO AGOTADO\n\n' +
-        'Google no respondió en 25 segundos. Comprueba la conexión.',
-        'error'
-      );
-
-      finalizar();
-    }
-
-  }, 25000);
-
-  document.body.appendChild(script);
+  intentar();
 }
 
 
