@@ -4,7 +4,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
 <title>Control Evento QR</title>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -70,6 +69,7 @@ button {
 
 button:disabled {
   opacity: .5;
+  cursor: not-allowed;
 }
 
 .secundario {
@@ -125,7 +125,7 @@ button:disabled {
 Asistencia y entrega de refrigerios
 </p>
 
-<label for="REGI2026">Clave del encargado</label>
+<label for="clave">Clave del encargado</label>
 
 <input
   type="password"
@@ -165,7 +165,7 @@ Cada participante puede registrar una vez cada operación.
 <script>
 
 // =====================================
-// CONEXIÓN GOOGLE APPS SCRIPT
+// GOOGLE APPS SCRIPT
 // =====================================
 
 const API =
@@ -175,20 +175,16 @@ let scanner = null;
 let ocupado = false;
 let ultimoCodigo = '';
 let ultimoTiempo = 0;
-let timeoutSolicitud = null;
 
 
 // =====================================
-// MOSTRAR MENSAJES
+// MENSAJES
 // =====================================
 
 function mostrar(texto, tipo = '') {
-
   const caja = document.getElementById('resultado');
-
   caja.className = tipo;
   caja.textContent = texto;
-
 }
 
 
@@ -208,15 +204,15 @@ async function iniciarScanner() {
     return;
   }
 
-  if (!window.isSecureContext ||
-      !navigator.mediaDevices ||
-      !navigator.mediaDevices.getUserMedia) {
-
+  if (
+    !window.isSecureContext ||
+    !navigator.mediaDevices ||
+    !navigator.mediaDevices.getUserMedia
+  ) {
     mostrar(
-      'Necesitas abrir esta página mediante HTTPS y permitir el acceso a la cámara.',
+      'Necesitas abrir la página mediante HTTPS y permitir la cámara.',
       'error'
     );
-
     return;
   }
 
@@ -238,30 +234,25 @@ async function iniciarScanner() {
 
     document.getElementById('iniciar').disabled = true;
 
-    mostrar(
-      'CÁMARA ACTIVA\nEscanea un código QR.',
-      'exito'
-    );
+    mostrar('CÁMARA ACTIVA\nEscanea un código QR.', 'exito');
 
-  } catch(error) {
+  } catch (error) {
 
     scanner = null;
 
     mostrar(
-      'ERROR DE CÁMARA: ' +
+      'ERROR DE CÁMARA:\n' +
       (error.message || String(error)),
       'error'
     );
 
     console.error(error);
-
   }
-
 }
 
 
 // =====================================
-// ENVIAR CÓDIGO A GOOGLE SHEETS
+// PROCESAR QR
 // =====================================
 
 function procesarQR(codigo) {
@@ -277,32 +268,38 @@ function procesarQR(codigo) {
     return;
   }
 
-  ocupado = true;
-
-  ultimoCodigo = codigo;
-  ultimoTiempo = ahora;
-
   const clave = document.getElementById('clave')
     .value.trim();
 
   const operacion = document.getElementById('operacion')
     .value;
 
+  ocupado = true;
+  ultimoCodigo = codigo;
+  ultimoTiempo = ahora;
+
   mostrar(
-    'Consultando participante...\nCódigo: ' + codigo
+    'Registrando participante...\nCódigo: ' + codigo
   );
 
-  const parametros = new URLSearchParams({
-    action: 'scan',
-    code: codigo.trim(),
-    operation: operacion,
-    key: clave,
-    callback: 'qrCallback'
-  });
+  enviarRegistro(codigo.trim(), operacion, clave);
+}
+
+
+// =====================================
+// ENVIAR REGISTRO A GOOGLE
+// =====================================
+
+function enviarRegistro(codigo, operacion, clave) {
+
+  const callbackNombre =
+    'qrCallback_' + Date.now() + '_' +
+    Math.floor(Math.random() * 100000);
 
   const script = document.createElement('script');
 
   let terminado = false;
+  let temporizador = null;
 
   function finalizar() {
 
@@ -310,19 +307,31 @@ function procesarQR(codigo) {
 
     terminado = true;
 
-    clearTimeout(timeoutSolicitud);
+    if (temporizador) {
+      clearTimeout(temporizador);
+    }
 
     if (script.parentNode) {
       script.parentNode.removeChild(script);
     }
 
-    delete window.qrCallback;
+    delete window[callbackNombre];
 
     ocupado = false;
-
   }
 
-  window.qrCallback = function(respuesta) {
+  window[callbackNombre] = function(respuesta) {
+
+    if (!respuesta || typeof respuesta.ok !== 'boolean') {
+
+      mostrar(
+        'Google respondió con un formato inesperado.',
+        'error'
+      );
+
+      finalizar();
+      return;
+    }
 
     if (respuesta.ok) {
 
@@ -330,6 +339,7 @@ function procesarQR(codigo) {
         '✓ REGISTRO EXITOSO\n\n' +
         respuesta.nombre +
         '\nCódigo: ' + respuesta.codigo +
+        '\nOperación: ' + respuesta.operacion +
         '\nHora: ' + respuesta.hora,
         'exito'
       );
@@ -343,47 +353,51 @@ function procesarQR(codigo) {
           : ''),
         'error'
       );
-
     }
 
     finalizar();
-
   };
 
   script.onerror = function() {
 
     mostrar(
       'ERROR DE CONEXIÓN\n\n' +
-      'No se recibió respuesta de Google Apps Script.\n' +
-      'Comprueba la implementación y la conexión a internet.',
+      'No se pudo recibir la respuesta de Google Apps Script.\n' +
+      'Comprueba internet y la implementación.',
       'error'
     );
 
-    console.error('URL solicitada:', script.src);
+    console.error('Error cargando:', script.src);
 
     finalizar();
-
   };
+
+  const parametros = new URLSearchParams({
+    action: 'scan',
+    code: codigo,
+    operation: operacion,
+    key: clave,
+    callback: callbackNombre
+  });
 
   script.src = API + '?' + parametros.toString();
 
-  document.body.appendChild(script);
-
-  timeoutSolicitud = setTimeout(() => {
+  temporizador = setTimeout(function() {
 
     if (!terminado) {
 
       mostrar(
-        'TIEMPO AGOTADO\n\nGoogle no respondió a tiempo. Comprueba internet y vuelve a intentar.',
+        'TIEMPO AGOTADO\n\n' +
+        'Google no respondió en 25 segundos. Comprueba la conexión.',
         'error'
       );
 
       finalizar();
-
     }
 
-  }, 20000);
+  }, 25000);
 
+  document.body.appendChild(script);
 }
 
 
@@ -396,24 +410,19 @@ async function detenerScanner() {
   if (scanner) {
 
     try {
-
       await scanner.stop();
       await scanner.clear();
 
-    } catch(error) {
-
+    } catch (error) {
       console.error(error);
-
     }
 
     scanner = null;
-
   }
 
   document.getElementById('iniciar').disabled = false;
 
   mostrar('Cámara detenida.', 'aviso');
-
 }
 
 </script>
